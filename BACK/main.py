@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from typing import List
-from services.formatter import format_document
+from utils.prompt import prompt_generator
 from services.llm import sendRequest
 from services.fileCreator import create_document
+from services.ieeeFormat import generate_ieee_paper 
 
 app = FastAPI()
 
@@ -23,16 +24,10 @@ class Schema(BaseModel):
 
 @app.post("/generate-docs")
 async def generate_docs(data: Schema):
-    #start validation spinner
-    result = format_document(data.overview, data.npages, data.section)
-    # stop validation spinner and start formating content spinner
+    result = prompt_generator(data.overview, data.npages, data.section)
     
     if result.get('status') == 'done':
-        #stop formating content spinner and start LLM request spinner
         llmResponse = sendRequest(result.get('prompt'))
-        # stop LLM request spinner and start docs creating spinner
-        
-        create_document(llmResponse, data.format)
         
     else:
         return {

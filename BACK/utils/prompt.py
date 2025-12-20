@@ -1,7 +1,7 @@
 import textwrap
 
 
-def format_document(overview, npages, sections):
+def prompt_generator(overview, npages, sections):
     prompt = textwrap.dedent("""
     You are an expert academic research writer, technical author, and scientific editor.
 
@@ -51,11 +51,12 @@ def format_document(overview, npages, sections):
 
     OUTPUT FORMAT (STRICT):
     Return a single JSON object in the following structure:
-
     {
-      "Section Name 1": "Paragraph 1\\n\\nParagraph 2\\n\\nParagraph 3",
-      "Section Name 2": "Paragraph 1\\n\\nParagraph 2\\n\\nParagraph 3"
+      "<Section Name 1>": "Paragraph 1\n\nParagraph 2\n\nParagraph 3",
+      "<Section Name 2>": "Paragraph 1\n\nParagraph 2\n\nParagraph 3",
+      "<Section Name 3>": "Paragraph 1\n\nParagraph 2\n\nParagraph 3"
     }
+
 
     JSON RULES:
     - All keys and values must be valid JSON strings.

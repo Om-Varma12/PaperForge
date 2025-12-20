@@ -2,11 +2,11 @@ import os
 from openai import OpenAI
 import json
 
-def sendRequest(prompt, sections, npages):
+def sendRequest(prompt):
 
     client = OpenAI(
         base_url="https://router.huggingface.co/v1",
-        api_key=os.getenv("HUGGINGFACE_API_KEY"),
+        api_key=os.getenv("HF_TOKEN"),
     )
 
     completion = client.chat.completions.create(
@@ -14,7 +14,7 @@ def sendRequest(prompt, sections, npages):
         messages=[
             {
                 "role": "user",
-                "content": "Take as much as time you need, but read the following things thoroughly: " + prompt
+                "content": "Take as much as time you need, but read the following things thoroughly and generate the required text: " + prompt
             }
         ],
     )
