@@ -1,2 +1,3 @@
-./services/llm.py
-./tests/normalTest.py
+services/llm.py
+tests/normalTest.py
+BACK/.env

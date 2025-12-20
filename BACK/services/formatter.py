@@ -1,7 +1,7 @@
 import textwrap
 
 
-def format_document(data):
+def format_document(overview, npages, sections):
     prompt = textwrap.dedent("""
     You are an expert academic research writer, technical author, and scientific editor.
 

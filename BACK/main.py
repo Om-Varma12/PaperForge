@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import List
 from services.formatter import format_document
 from services.llm import sendRequest
+from services.fileCreator import create_document
 
 app = FastAPI()
 
@@ -23,14 +24,15 @@ class Schema(BaseModel):
 @app.post("/generate-docs")
 async def generate_docs(data: Schema):
     #start validation spinner
-    result = format_document(data)
+    result = format_document(data.overview, data.npages, data.section)
     # stop validation spinner and start formating content spinner
     
     if result.get('status') == 'done':
         #stop formating content spinner and start LLM request spinner
         llmResponse = sendRequest(result.get('prompt'))
-        print(llmResponse)
         # stop LLM request spinner and start docs creating spinner
+        
+        create_document(llmResponse, data.format)
         
     else:
         return {
