@@ -1,0 +1,77 @@
+/* ---------- Global ---------- */
+html, body, [class*="css"] {
+    font-family: "Inter", system-ui;
+    background-color: #0e1117;
+    color: #e5e7eb;
+}
+
+/* Remove Streamlit branding space */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+/* ---------- Title ---------- */
+.paperforge-title {
+    font-size: 3.2rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.paperforge-subtitle {
+    font-size: 1.1rem;
+    color: #9ca3af;
+    margin-top: 0.5rem;
+}
+
+/* ---------- Glass Card ---------- */
+.card {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 18px;
+    padding: 2rem;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    backdrop-filter: blur(12px);
+    margin-bottom: 2rem;
+}
+
+/* ---------- Inputs ---------- */
+textarea, input, select {
+    background-color: #0b1220 !important;
+    color: #e5e7eb !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+/* ---------- Buttons ---------- */
+.stButton button {
+    width: 100%;
+    height: 3.4rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: white;
+    border: none;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stButton button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 30px rgba(139,92,246,0.4);
+}
+
+/* ---------- Download Button ---------- */
+.stDownloadButton button {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+/* ---------- Footer ---------- */
+.footer {
+    text-align: center;
+    font-size: 0.9rem;
+    color: #6b7280;
+    margin-top: 4rem;
+}
