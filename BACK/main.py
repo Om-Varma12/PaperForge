@@ -1,40 +1,34 @@
+# main.py
+
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from typing import List
 from utils.prompt import prompt_generator
 from services.llm import sendRequest
-from services.fileCreator import create_document
-from services.ieeeFormat import generate_ieee_paper 
+from services.ieeeFormat import generate_ieee_paper
 
 app = FastAPI()
 
 class Schema(BaseModel):
-    overview: str = Field(
-        ...,
-        min_length=30,
-        description="Project overview must be at least 30 characters long"
-    )
+    overview: str = Field(..., min_length=30)
     format: str
     npages: int
-    section: list[str] = Field(
-        ...,
-        min_items=5,
-        description="Select at least 5 paper sections"
-    )
+
 
 @app.post("/generate-docs")
 async def generate_docs(data: Schema):
-    result = prompt_generator(data.overview, data.npages, data.section)
-    
-    if result.get('status') == 'done':
-        llmResponse = sendRequest(result.get('prompt'))
-        
-    else:
-        return {
-            "status": "error",
-            "message": "Prompt generation failed"
-        }
-    
+    # 1️⃣ Prompt generation
+    prompt_result = prompt_generator(data.overview)
+
+    if prompt_result.get("status") != "done":
+        return {"status": "error", "message": "Prompt generation failed"}
+
+    # 2️⃣ LLM call
+    llm_response = sendRequest(prompt_result["prompt"])
+
+    # 3️⃣ DOCX generation
+    output_file = generate_ieee_paper(llm_response)
+
     return {
         "status": "success",
+        "file": output_file
     }

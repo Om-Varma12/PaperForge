@@ -1,3 +1,4 @@
+import re
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -5,9 +6,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 
-# --------------------------------------------------
-# Roman numeral helper
-# --------------------------------------------------
 def to_roman(num):
     romans = {
         1: "I", 2: "II", 3: "III", 4: "IV", 5: "V",
@@ -16,9 +14,6 @@ def to_roman(num):
     return romans.get(num, str(num))
 
 
-# --------------------------------------------------
-# Continuous section (NO page break)
-# --------------------------------------------------
 def add_continuous_section(doc):
     section = doc.add_section()
     sectPr = section._sectPr
@@ -34,64 +29,29 @@ def add_continuous_section(doc):
     return section
 
 
-# --------------------------------------------------
-# Main IEEE Paper Generator
-# --------------------------------------------------
-def generate_ieee_paper(paper: dict):
+def clean_text(text: str) -> str:
+    lines = text.splitlines()
+    cleaned = []
 
-    def set_two_columns(section):
-        sectPr = section._sectPr
-        cols = sectPr.xpath("./w:cols")
-        if cols:
-            cols = cols[0]
-        else:
-            cols = OxmlElement("w:cols")
-            sectPr.append(cols)
+    for line in lines:
+        l = line.strip()
+        if not l:
+            continue
+        if re.match(r'^(abstract|introduction|methodology|results?|references?)$', l, re.I):
+            continue
+        if l.lower().startswith("title:"):
+            continue
+        if re.match(r'^[-_=]{3,}$', l):
+            continue
+        cleaned.append(line)
 
-        cols.set(qn("w:num"), "2")
-        cols.set(qn("w:space"), "720")
+    return "\n".join(cleaned).strip()
 
-    # -------- Section Heading (10pt, Bold, Centered) --------
-    def add_section_heading(text):
-        p = doc.add_paragraph()
-        run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(10)
-        run.bold = True
 
-        p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_after = Pt(2.6)
-
-    # -------- Abstract & Keywords Body (9pt, Bold) --------
-    def add_bold_body_paragraph(text):
-        p = doc.add_paragraph()
-        run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(9)
-        run.bold = True
-
-        p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        p.paragraph_format.line_spacing = 1.0
-        p.paragraph_format.space_after = Pt(2.6)
-
-    # -------- Normal Body Paragraph (9pt, Normal) --------
-    def add_normal_body_paragraph(text):
-        p = doc.add_paragraph()
-        run = p.add_run(text)
-        run.font.name = "Times New Roman"
-        run.font.size = Pt(9)
-        run.bold = False
-
-        p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        p.paragraph_format.line_spacing = 1.0
-        p.paragraph_format.space_after = Pt(2.6)
-
-    # ---------------- DOCUMENT SETUP ----------------
-
+def generate_ieee_paper(paper: dict) -> str:
     doc = Document()
-
-    # 🔥 NARROW MARGINS
     section = doc.sections[0]
+
     section.page_width = Inches(8.27)
     section.page_height = Inches(11.69)
     section.top_margin = Inches(0.5)
@@ -99,171 +59,57 @@ def generate_ieee_paper(paper: dict):
     section.left_margin = Inches(0.5)
     section.right_margin = Inches(0.5)
 
-    # ---------------- TITLE ----------------
-
     title = doc.add_paragraph()
-    run = title.add_run(paper["title"])
+    run = title.add_run(paper.get("Title", ""))
     run.font.name = "Times New Roman"
     run.font.size = Pt(22)
     run.bold = True
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # ---------------- AUTHORS ----------------
-
-    authors = doc.add_paragraph()
-    run = authors.add_run(paper["authors"])
-    run.font.name = "Times New Roman"
-    run.font.size = Pt(9)
-    run.bold = False
-    authors.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    # ---------------- TWO COLUMN CONTINUOUS ----------------
-
     section = add_continuous_section(doc)
-    set_two_columns(section)
 
-    # ---------------- ABSTRACT ----------------
+    if "Abstract" in paper:
+        p = doc.add_paragraph("Abstract")
+        p.runs[0].bold = True
+        doc.add_paragraph(clean_text(paper["Abstract"]))
 
-    add_section_heading("Abstract")
-    add_bold_body_paragraph(paper["abstract"])
+    excluded = {"Title", "Abstract", "References", "output_file"}
 
-    # ---------------- KEYWORDS ----------------
+    for idx, key in enumerate([k for k in paper if k not in excluded], start=1):
+        p = doc.add_paragraph(f"{to_roman(idx)}. {key}")
+        p.runs[0].bold = True
+        doc.add_paragraph(clean_text(paper[key]))
 
-    add_section_heading("Keywords")
-    add_bold_body_paragraph(", ".join(paper["keywords"]))
-    doc.add_paragraph("")
+    if "References" in paper:
+        p = doc.add_paragraph("References")
+        p.runs[0].bold = True
 
-    # ---------------- MAIN SECTIONS ----------------
+        refs = paper["References"]
+        if isinstance(refs, str):
+            refs = re.split(r"\n\s*\n", refs)
 
-    for idx, sec in enumerate(paper["sections"], start=1):
-        roman = to_roman(idx)
-        add_section_heading(f"{roman}. {sec['title']}")
-        add_normal_body_paragraph(sec["content"])
+        for r in refs:
+            doc.add_paragraph(r)
 
-        # One empty line between sections
-        doc.add_paragraph("")
+    output_file = paper.get("output_file", "output.docx")
+    doc.save(output_file)
 
-    # ---------------- REFERENCES ----------------
+    return output_file
+    
+    
 
-    add_section_heading("References")
-    for ref in paper["references"]:
-        add_normal_body_paragraph(ref)
+# ---------------- EXAMPLE USAGE ----------------
 
-    # ---------------- SAVE ----------------
 
-    doc.save(paper["output_file"])
-    print(f"✅ IEEE paper generated with FINAL formatting lock 🔒")
+# paper_data = {
+#               'Title': 'Phishing Website Detection using Real-time Chrome Extension with XGBoost.', 
+#               'Abstract': "Abstract\n\nThe proliferation of phishing attacks has become a significant concern in the digital landscape, with malicious actors exploiting vulnerabilities in web applications to deceive users and compromise sensitive information. To counter this threat, we propose a real-time phishing website detection system utilizing a Chrome extension as the user interface. This system leverages the XGBoost algorithm as its machine learning backbone, which is trained on a comprehensive dataset of labeled phishing and legitimate websites. The Chrome extension, built using standard HTML and CSS, provides an intuitive interface for users to interact with the system, displaying real-time warnings and explanations for identified phishing websites. Our system's primary objective is to empower users with the capability to identify and avoid potential phishing threats, thereby enhancing their online security and protecting them from the financial and reputational consequences of falling victim to such attacks. This research provides a novel solution for real-time phishing detection, showcasing the potential of machine learning and web development technologies in combating cyber threats.", 
+#               'Introduction': "Phishing Detection on Real-Time Basis: A Chrome Extension Approach\n\nIntroduction\n\nPhishing has emerged as a significant threat to online security, with malicious actors exploiting vulnerabilities in web applications to deceive users into divulging sensitive information. The primary objective of phishing is to trick users into revealing their login credentials, credit card numbers, or other sensitive data, which can then be used for illicit purposes. As a result, phishing has become a leading cause of identity theft, financial loss, and reputational damage for individuals and organizations alike. In recent years, the frequency and sophistication of phishing attacks have increased exponentially, necessitating the development of effective countermeasures to mitigate this threat.\n\nThe existing literature on phishing detection has primarily focused on machine learning-based approaches, which utilize complex algorithms to classify websites as legitimate or phishing. However, these approaches often require large datasets, extensive computational resources, and time-consuming training processes, limiting their practical applicability. Furthermore, machine learning-based models can be vulnerable to adversarial attacks, where malicious actors attempt to manipulate the model's predictions through carefully crafted inputs. Therefore, there is a pressing need for the development of real-time phishing detection systems that can effectively identify and flag malicious websites without relying on extensive computational resources or complex machine learning algorithms.\n\nTo address this challenge, this research proposes the development of a real-time phishing detection Chrome extension that leverages the XGBoost algorithm as its backend. XGBoost is a popular and efficient machine learning algorithm that has been widely used in various applications, including classification, regression, and ranking tasks. Its ability to handle high-dimensional data, robustness to outliers, and efficient parallel processing capabilities make it an ideal choice for real-time phishing detection. In contrast to traditional machine learning approaches, XGBoost is computationally lightweight, allowing it to be deployed on resource-constrained devices and providing real-time detection capabilities.\n\nThe proposed Chrome extension will feature a user-friendly interface that displays a list of flagged websites, along with a detailed explanation of the reasons behind the phishing detection. This will enable users to make informed decisions about the legitimacy of a website and take necessary precautions to protect their sensitive information. Furthermore, the extension will provide users with an option to report suspicious websites, which will help to improve the model's accuracy and provide valuable insights for future research. By developing a real-time phishing detection Chrome extension, this research aims to contribute to the ongoing efforts to combat phishing and protect online users from malicious attacks.\n\nThe development of a real-time phishing detection Chrome extension using XGBoost as its backend has significant implications for online security and user protection. By providing a lightweight, efficient, and user-friendly solution for real-time phishing detection, this research aims to bridge the gap between existing machine learning-based approaches and the practical needs of online users. The proposed extension has the potential to be widely adopted by users, organizations, and institutions, contributing to a safer and more secure online environment.", 
+#               'Literature Review': "Phishing Detection on Real-time Basis: A Chrome Extension Approach\n\nAbstract\n----------------\n\nPhishing attacks have become a significant concern for the online community, with thousands of users falling prey to these malicious activities every year. To combat this issue, we propose a novel approach to detect phishing websites in real-time using a Chrome extension. This paper presents a comprehensive review of the existing literature on phishing detection, machine learning algorithms, and Chrome extensions, providing a foundation for our proposed solution. We discuss the limitations of current methods and highlight the potential of our approach in providing a more accurate and efficient phishing detection system.\n\nLiterature Review\n----------------\n\nPhishing attacks have been a persistent threat to online security for over two decades. These attacks involve tricking users into revealing sensitive information, such as login credentials or financial details, by masquerading as legitimate websites (Antonakakis et al., 2012) [1]. The consequences of phishing attacks can be severe, resulting in financial loss, identity theft, and compromised user trust (Krebs, 2006) [2]. To mitigate these risks, researchers have proposed various methods for detecting phishing websites, including keyword-based approaches, machine learning algorithms, and browser-based extensions.\n\nKeyword-based approaches involve identifying common characteristics of phishing websites, such as misspelled domain names or suspicious URLs (Cranor & LaMacchia, 1998) [3]. However, these methods are often ineffective, as phishing attackers constantly evolve their tactics to evade detection. Machine learning algorithms, on the other hand, have shown promise in identifying phishing websites based on features such as website layout, content, and user interactions (Ross et al., 2011) [4]. Techniques such as decision trees, support vector machines, and random forests have been employed to classify websites as legitimate or phishing (Ma et al., 2011) [5].\n\nRecent studies have focused on developing browser-based extensions to detect phishing websites in real-time (Chen et al., 2012) [6]. These extensions utilize machine learning algorithms to analyze website characteristics and predict the likelihood of a website being phishing. However, these approaches often rely on pre-trained models and may not adapt to new phishing tactics. To address this limitation, we propose a novel approach that combines machine learning with a Chrome extension to detect phishing websites in real-time.\n\nXGBoost, a popular machine learning algorithm, has been widely used in phishing detection due to its ability to handle large datasets and provide accurate predictions (Chen et al., 2015) [7]. XGBoost has been shown to outperform other machine learning algorithms in detecting phishing websites, with an accuracy of up to 95% (Wang et al., 2018) [8]. However, the effectiveness of XGBoost in phishing detection depends on the quality of the dataset and the feature engineering process.\n\nThe design of phishing detection systems also plays a crucial role in their effectiveness. Recent studies have proposed various architectures for phishing detection, including neural networks, decision trees, and ensemble methods (Li et al., 2019) [9]. However, these approaches often require significant computational resources and may not be scalable for real-time detection.\n\nTo address these limitations, we propose a novel architecture for phishing detection using a Chrome extension. Our approach leverages XGBoost as the backend algorithm and a normal HTML page as the frontend interface. The extension will analyze website characteristics in real-time and provide users with a warning if the website is identified as phishing. We will discuss the design and implementation of our proposed system in the subsequent sections.\n\nThe development of phishing detection systems also raises important questions about user education and awareness. While technical solutions can provide a layer of protection, users must also be educated on how to identify and avoid phishing attacks. Recent studies have highlighted the importance of user education in preventing phishing attacks (Falliere et al., 2010) [10]. Our proposed system will provide users with a warning if a website is identified as phishing, but it is essential to educate users on how to recognize and report suspicious websites.\n\nReferences\n----------\n\n[1] Antonakakis, M., Perdisci, R., & Gandica, D. (2012). From Throwaway E-mail to Breadcrumbs: Tracking Phishers' Communication. ACM Transactions on Information and System Security, 15(3), 1-24.\n\n[2] Krebs, B. (2006). Phishing: An Introduction. Journal of Business and Information Technology, 21(3), 34-43.\n\n[3] Cranor, L. F., & LaMacchia, B. A. (1998). Spam! (Coordination of Unsolicited Commercial Email). In Proceedings of the 1998 USENIX Annual Technical Conference.\n\n[4] Ross, A. E., Crosby, R. A., & Small, M. A. (2011). An Analysis of Phishing Attacks and Countermeasures. International Journal of Network Security, 11(2), 71-80.\n\n[5] Ma, J., Kwon, K., & Lee, S. (2011). Phishing Detection using Support Vector Machines. Journal of Information Science and Engineering, 27(4), 1275-1288.\n\n[6] Chen, X., & Huang, S. (2012). A Browser Extension for Phishing Detection. In Proceedings of the 2012 ACM Symposium on Applied Computing.\n\n[7] Chen, T., Guestrin, C., & Corrado, G. S. (2015). XGBoost: A Scalable Tree Boosting System. In Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining.\n\n[8] Wang, Y., Zhang, J., & Zhang, X. (2018). Phishing Detection using XGBoost. Journal of Cybersecurity, 3(2), 1-12.\n\n[9] Li, X., Wang, J., & Shen, J. (2019). Phishing Detection using Deep Learning. Journal of Network and Computer Applications, 135, 102-112.\n\n[10] Falliere, N., Murchu, L. O., & Chien, E. (2010). W32.Duqu: Analysis of a Highly Evasive Threat. Symantec Security Response.", 
+#               'Methodology': "Title: Real-Time Phishing Website Detection using XGBoost and Chrome Extension\n\nAbstract\n\nPhishing websites pose a significant threat to online security, compromising sensitive user information and financial data. In this paper, we present a novel approach to detect phishing websites in real-time using a Chrome extension. Our system leverages the XGBoost algorithm at the backend, a machine learning technique that enables efficient classification of websites. The frontend comprises a normal HTML page that displays the detection results and the reasons behind the classification. This paper provides a comprehensive overview of the methodology employed in the development of the Chrome extension.\n\nMethodology\n\nOur methodology involves the development of a Chrome extension that integrates with the XGBoost algorithm to detect phishing websites in real-time. The backend infrastructure is built on a Python framework using the Scikit-learn library, which provides an efficient and scalable implementation of the XGBoost algorithm. We trained the XGBoost model on a large dataset of labeled phishing and non-phishing websites, resulting in a robust classification model that can accurately identify phishing websites.\n\nThe frontend of the Chrome extension is built using HTML, CSS, and JavaScript, providing a user-friendly interface to display the detection results and the reasons behind the classification. The Chrome extension communicates with the backend infrastructure through a RESTful API, enabling seamless data exchange and real-time updates. We employed the Webpack bundler to optimize the frontend code, ensuring efficient loading and rendering of the Chrome extension.\n\nTo develop the Chrome extension, we followed the standard Chrome extension development guidelines, ensuring compatibility with the latest Chrome browser versions. We utilized the Chrome extension's permissions API to request the necessary permissions for accessing web pages and executing JavaScript code. The Chrome extension's content script is responsible for injecting JavaScript code into web pages, allowing us to inspect and analyze the website's content.\n\nFor the machine learning model, we employed the XGBoost algorithm due to its exceptional performance on classification tasks, particularly when dealing with imbalanced datasets. We optimized the XGBoost model using a grid search approach, tuning the hyperparameters to achieve the best possible classification accuracy. The model was trained on a dataset of 100,000 labeled phishing and non-phishing websites, resulting in a robust classification model that can accurately identify phishing websites.\n\nTo ensure the accuracy of the XGBoost model, we employed various feature engineering techniques, including the extraction of domain name features, content features, and behavioral features. The domain name features include the length of the domain name, the number of subdomains, and the presence of certain keywords. The content features include the text content of the website, the presence of certain keywords, and the website's metadata. The behavioral features include the website's click-through rate, the user's browsing history, and the website's reputation score.\n\nWe evaluated the performance of the XGBoost model using various metrics, including precision, recall, F1-score, and area under the receiver operating characteristic curve (AUC-ROC). The results showed that the XGBoost model achieves an accuracy of 95% on the test dataset, with a precision of 90% and a recall of 98%. The AUC-ROC curve demonstrates the model's ability to accurately classify phishing websites, with a high area under the curve (AUC) of 0.98.\n\nTo ensure the security and robustness of the Chrome extension, we employed various security measures, including secure data transmission, encryption, and secure storage of sensitive user data. We also implemented a anomaly detection system to detect and prevent potential security threats. The Chrome extension's security features ensure the confidentiality, integrity, and availability of user data, protecting users from phishing attacks and other online security threats.\n\nThe Chrome extension's user interface is designed to provide a seamless user experience, displaying the detection results and the reasons behind the classification. The frontend code is optimized for performance, ensuring efficient loading and rendering of the Chrome extension. The Chrome extension's source code is publicly available, allowing researchers and developers to modify and extend the extension to suit their specific needs.", 
+#               'Results': "Detection of Phishing Websites in Real-Time using XGBoost and Chrome Extension\n\nAbstract\n\nIn this study, we developed a Chrome extension that utilizes the XGBoost algorithm to detect phishing websites in real-time. The extension features a user-friendly interface that displays a list of detected phishing websites along with the reasons for their classification. Our results demonstrate the effectiveness of the proposed system in identifying phishing websites, with a high accuracy rate and low false positive rate.\n\nIntroduction\n\nPhishing attacks have become a significant threat to online security, with cybercriminals using various tactics to deceive users and obtain sensitive information. The increasing sophistication of phishing attacks has made it challenging for users to identify legitimate websites from malicious ones. To address this issue, we developed a Chrome extension that leverages the XGBoost algorithm to detect phishing websites in real-time. This study presents the results of our research, focusing on the performance of the proposed system.\n\nMethods\n\nOur Chrome extension utilizes a combination of machine learning and rule-based approaches to detect phishing websites. The XGBoost algorithm is employed as the backend, which is trained on a dataset of labeled phishing and non-phishing websites. The trained model is then integrated into the Chrome extension, which uses the model's predictions to classify websites in real-time. The extension's user interface displays a list of detected phishing websites, along with the reasons for their classification.\n\nResults\n\nThe proposed system was evaluated on a dataset of 100,000 websites, consisting of 50,000 phishing and 50,000 non-phishing websites. The results are presented in the following paragraphs.\n\nThe system achieved an overall accuracy of 95.2%, with a precision of 97.5% and a recall of 92.9%. The high accuracy rate indicates that the system is effective in identifying phishing websites, while the precision and recall values suggest that the system is able to minimize false positives and false negatives. The system's performance was evaluated using the F1-score, which measures the balance between precision and recall. The F1-score of 94.7% indicates that the system is able to achieve a good balance between precision and recall.\n\nThe system's performance was also evaluated using the Area Under the Receiver Operating Characteristic Curve (AUC-ROC). The AUC-ROC value of 0.98 indicates that the system is highly effective in distinguishing between phishing and non-phishing websites. The system's performance was further evaluated using the Area Under the Precision-Recall Curve (AUC-PR). The AUC-PR value of 0.96 indicates that the system is able to achieve a high precision while maintaining a good recall.\n\nThe system's performance was also evaluated using the Mean Average Precision (MAP) metric. The MAP value of 0.93 indicates that the system is able to achieve a high average precision while maintaining a good recall. The system's performance was further evaluated using the Normalized Discounted Cumulative Gain (NDCG) metric. The NDCG value of 0.94 indicates that the system is able to achieve a high ranking of relevant websites while minimizing the ranking of non-relevant websites.\n\nThe system's performance was evaluated using a variety of datasets, including the Phishing Websites Dataset, the Web-Phishing Dataset, and the PhishTank Dataset. The results demonstrate that the system is able to achieve high accuracy rates and low false positive rates across all datasets. The system's performance was further evaluated using a variety of metrics, including the F1-score, AUC-ROC, AUC-PR, MAP, and NDCG. The results demonstrate that the system is able to achieve high values for all metrics, indicating its effectiveness in detecting phishing websites.\n\nThe system's performance was also evaluated using a variety of real-world scenarios, including websites with varying levels of complexity and websites with different types of phishing attacks. The results demonstrate that the system is able to achieve high accuracy rates and low false positive rates across all scenarios. The system's performance was further evaluated using a variety of user studies, which demonstrate that the system is able to effectively detect phishing websites and provide users with accurate and informative feedback.", 
+#               'References': 'Title: Real-Time Phishing Site Detection using XGBoost and Chrome Extension\n\nAbstract\n\nPhishing attacks have become a significant threat to internet users, resulting in financial losses and compromised personal data. This paper presents a novel approach to detecting phishing websites in real-time using a Chrome extension. The proposed system employs XGBoost, an efficient machine learning algorithm, as the backend engine. The frontend is built using HTML, which displays the detected phishing errors and their corresponding explanations. We evaluate the performance of the proposed system on a dataset of labeled phishing and legitimate websites, demonstrating its effectiveness in identifying phishing sites with high accuracy. The Chrome extension is designed to be user-friendly, allowing users to report suspicious websites and contribute to the improvement of the detection model.\n\nI. Introduction\n\nPhishing attacks have been a persistent threat to internet users, with the number of reported incidents increasing exponentially over the years [1]. Phishing websites use various tactics to deceive users into divulging sensitive information, such as passwords and credit card numbers. To mitigate this threat, it is essential to develop effective detection mechanisms that can identify phishing sites in real-time.\n\nII. Background and Related Work\n\nMachine learning algorithms have been extensively used in phishing detection due to their ability to learn from labeled data and make accurate predictions [2]. XGBoost, a gradient boosting algorithm, is particularly effective in handling high-dimensional data and has been widely adopted in various applications [3]. However, most existing phishing detection systems rely on manual inspection or traditional machine learning algorithms, which can be time-consuming and less accurate.\n\nIII. System Design and Implementation\n\nOur proposed system consists of two primary components: the backend engine and the frontend interface. The backend engine employs XGBoost to classify websites as either phishing or legitimate based on their features. The frontend interface is built using HTML and displays the detected phishing errors and their corresponding explanations.\n\nA. Backend Engine\n\nThe backend engine uses XGBoost to classify websites based on their features. We extract a set of features from each website, including URL patterns, HTTP headers, and content characteristics. These features are then fed into the XGBoost model, which predicts the likelihood of a website being phishing.\n\nB. Frontend Interface\n\nThe frontend interface is built using HTML and provides a user-friendly interface for users to report suspicious websites. The interface displays the detected phishing errors and their corresponding explanations, allowing users to understand the reasons behind the detection.\n\nIV. Evaluation and Results\n\nWe evaluate the performance of the proposed system on a dataset of labeled phishing and legitimate websites. The results demonstrate that the proposed system achieves high accuracy in detecting phishing sites.\n\nV. Conclusion\n\nThis paper presents a novel approach to detecting phishing websites in real-time using a Chrome extension and XGBoost. The proposed system demonstrates high accuracy in identifying phishing sites and provides a user-friendly interface for users to report suspicious websites. Future work will focus on improving the detection model and expanding the dataset.\n\nReferences:\n\n[1] A. Kumar, et al., "Phishing attacks: A review of the literature," Journal of Network and Computer Applications, vol. 111, pp. 102-115, 2018.\n\n[2] S. J. Russell and P. Norvig, "Artificial intelligence: A modern approach," Prentice Hall, 2010.\n\n[3] C. Chen, et al., "XGBoost: A scalable tree boosting system," in Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, 2016, pp. 785-794.\n\n[4] A. Srivastava, et al., "Phishing site detection using machine learning," Journal of Information Security and Applications, vol. 29, pp. 101-108, 2016.\n\n[5] A. M. Youssef, et al., "Real-time phishing detection using a Chrome extension," in Proceedings of the 2019 International Conference on Intelligent Systems and Cybernetics, 2019, pp. 1-6.\n\n[6] Z. C. İnan, et al., "Phishing detection using XGBoost and feature engineering," Journal of Internet and Information Systems, vol. 13, no. 1, pp. 1-13, 2020.\n\n[7] H. Li, et al., "A survey of phishing detection methods," IEEE Access, vol. 7, pp. 133-143, 2019.\n\n[8] C. A. A. N. de Souza, et al., "Phishing detection using machine learning and natural language processing," Journal of Intelligent Information Systems, vol. 54, no. 2, pp. 177-190, 2019.'
+#               }
 
-# ======================================================================
-# PAPER DATA
-# ======================================================================
 
-paper_data = {
-    "title": "AI-Based Phishing Website Detection Using Machine Learning Techniques",
-    "authors": (
-        "Om Varma\n"
-        "Department of Computer Science\n"
-        "India\n"
-        "omvarma@email.com"
-    ),
-    "abstract": (
-        "Phishing attacks remain one of the most critical cybersecurity threats, "
-        "exploiting user trust to steal sensitive information such as login credentials, "
-        "financial data, and personal identity details. Traditional blacklist-based and "
-        "rule-based detection mechanisms fail to detect newly emerging phishing websites, "
-        "making them ineffective against zero-day attacks. This paper proposes an "
-        "artificial intelligence driven phishing website detection system that leverages "
-        "machine learning techniques to classify websites as benign or malicious. The "
-        "proposed system extracts URL-based, domain-based, and content-based features, "
-        "including lexical patterns, domain age, SSL certificate information, and HTML "
-        "structure. An XGBoost classifier is trained on a large-scale dataset containing "
-        "over six hundred thousand URLs. Experimental results demonstrate that the "
-        "proposed approach achieves superior accuracy, precision, recall, and F1-score "
-        "compared to traditional machine learning models, highlighting its effectiveness "
-        "in real-world phishing detection scenarios."
-    ),
-    "keywords": [
-        "Phishing Detection",
-        "Machine Learning",
-        "Cybersecurity",
-        "XGBoost",
-        "Website Security"
-    ],
-    "sections": [
-        {
-            "title": "1. Introduction",
-            "content": (
-                "Phishing websites are fraudulent online platforms designed to impersonate "
-                "legitimate websites with the goal of deceiving users into revealing "
-                "confidential information. With the rapid growth of internet usage and "
-                "online services, phishing attacks have become increasingly sophisticated "
-                "and difficult to detect. Attackers frequently modify URLs, clone website "
-                "interfaces, and deploy short-lived domains to bypass traditional detection "
-                "systems. As a result, phishing continues to pose a severe threat to both "
-                "individual users and organizations worldwide. This section discusses the "
-                "motivation behind phishing detection, the challenges faced by existing "
-                "approaches, and the necessity for intelligent, data-driven solutions."
-            )
-        },
-        {
-            "title": "2. Related Work",
-            "content": (
-                "Several studies have explored phishing website detection using blacklist-based, "
-                "heuristic-based, and machine learning-based approaches. Blacklist-based methods "
-                "rely on previously reported phishing URLs but fail to identify newly created "
-                "malicious websites. Heuristic-based approaches utilize manually crafted rules, "
-                "which are often brittle and require frequent updates. Recent research has "
-                "demonstrated that machine learning models such as Support Vector Machines, "
-                "Random Forests, and Neural Networks can effectively classify phishing websites "
-                "using extracted features. However, these models often suffer from high false "
-                "positive rates or lack interpretability, limiting their practical adoption."
-            )
-        },
-        {
-            "title": "3. Methodology",
-            "content": (
-                "The proposed phishing detection system consists of four major components: data "
-                "collection, feature extraction, model training, and prediction. A large-scale "
-                "dataset containing benign, phishing, malware, and defacement URLs is collected "
-                "from publicly available sources. Feature extraction involves analyzing URL "
-                "lexical properties, domain registration details, SSL certificate attributes, "
-                "and webpage content. An XGBoost classifier is trained using these features due "
-                "to its ability to handle high-dimensional data and capture complex feature "
-                "interactions. The trained model is then integrated into a real-time detection "
-                "pipeline capable of analyzing URLs during browsing sessions."
-            )
-        },
-        {
-            "title": "4. Experimental Results",
-            "content": (
-                "Extensive experiments are conducted to evaluate the performance of the proposed "
-                "model. The dataset is divided into training and testing subsets, and multiple "
-                "evaluation metrics including accuracy, precision, recall, F1-score, and "
-                "confusion matrix are computed. The XGBoost model achieves an accuracy exceeding "
-                "99 percent, with significantly lower false positive rates compared to baseline "
-                "models. These results demonstrate the robustness and generalization capability "
-                "of the proposed system across diverse phishing scenarios."
-            )
-        },
-        {
-            "title": "5. Conclusion",
-            "content": (
-                "This paper presents an effective AI-based phishing website detection system "
-                "capable of identifying both known and zero-day phishing attacks. By leveraging "
-                "machine learning techniques and comprehensive feature extraction, the proposed "
-                "approach significantly outperforms traditional detection mechanisms. Future "
-                "work will focus on improving model explainability, reducing computational "
-                "overhead, and deploying the system as a browser extension for real-time user "
-                "protection."
-            )
-        }
-    ],
-    "references": [
-        "[1] R. Verma and K. Dyer, \"On the Character of Phishing URLs,\" IEEE, 2015.",
-        "[2] M. Aburrous et al., \"Intelligent phishing detection system,\" Expert Systems, 2010.",
-        "[3] T. Chen and C. Guestrin, \"XGBoost: A scalable tree boosting system,\" KDD, 2016."
-    ],
-    "output_file": "IEEE_Paper_PaperForge.docx"
-}
-# ---------------- RUN ----------------
-generate_ieee_paper(paper_data)
+# generate_ieee_paper(paper_data)
