@@ -6,6 +6,9 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 
+# --------------------------------------------------
+# Roman numeral helper
+# --------------------------------------------------
 def to_roman(num):
     romans = {
         1: "I", 2: "II", 3: "III", 4: "IV", 5: "V",
@@ -14,6 +17,9 @@ def to_roman(num):
     return romans.get(num, str(num))
 
 
+# --------------------------------------------------
+# Continuous section (NO page break)
+# --------------------------------------------------
 def add_continuous_section(doc):
     section = doc.add_section()
     sectPr = section._sectPr
@@ -29,26 +35,80 @@ def add_continuous_section(doc):
     return section
 
 
+# --------------------------------------------------
+# Clean messy LLM text (titles, separators, junk)
+# --------------------------------------------------
 def clean_text(text: str) -> str:
     lines = text.splitlines()
     cleaned = []
 
     for line in lines:
         l = line.strip()
+
         if not l:
             continue
+
+        # remove headings & noise
         if re.match(r'^(abstract|introduction|methodology|results?|references?)$', l, re.I):
             continue
         if l.lower().startswith("title:"):
             continue
         if re.match(r'^[-_=]{3,}$', l):
             continue
+
         cleaned.append(line)
 
     return "\n".join(cleaned).strip()
 
 
-def generate_ieee_paper(paper: dict) -> str:
+# --------------------------------------------------
+# Main IEEE Paper Generator
+# --------------------------------------------------
+def generate_ieee_paper(paper: dict):
+
+    def set_two_columns(section):
+        sectPr = section._sectPr
+        cols = sectPr.xpath("./w:cols")
+        if cols:
+            cols = cols[0]
+        else:
+            cols = OxmlElement("w:cols")
+            sectPr.append(cols)
+
+        cols.set(qn("w:num"), "2")
+        cols.set(qn("w:space"), "720")
+
+    def add_section_heading(text):
+        p = doc.add_paragraph()
+        run = p.add_run(text)
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(10)
+        run.bold = True
+        p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(2.6)
+
+    def add_bold_body(text):
+        p = doc.add_paragraph()
+        run = p.add_run(text)
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(9)
+        run.bold = True
+        p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.line_spacing = 1.0
+        p.paragraph_format.space_after = Pt(2.6)
+
+    def add_normal_body(text):
+        p = doc.add_paragraph()
+        run = p.add_run(text)
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(9)
+        run.bold = False
+        p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.line_spacing = 1.0
+        p.paragraph_format.space_after = Pt(2.6)
+
+    # ---------------- DOCUMENT SETUP ----------------
+
     doc = Document()
     section = doc.sections[0]
 
@@ -59,6 +119,8 @@ def generate_ieee_paper(paper: dict) -> str:
     section.left_margin = Inches(0.5)
     section.right_margin = Inches(0.5)
 
+    # ---------------- TITLE ----------------
+
     title = doc.add_paragraph()
     run = title.add_run(paper.get("Title", ""))
     run.font.name = "Times New Roman"
@@ -66,35 +128,48 @@ def generate_ieee_paper(paper: dict) -> str:
     run.bold = True
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+    # ---------------- TWO COLUMN CONTINUOUS ----------------
+
     section = add_continuous_section(doc)
+    set_two_columns(section)
+
+    # ---------------- ABSTRACT ----------------
 
     if "Abstract" in paper:
-        p = doc.add_paragraph("Abstract")
-        p.runs[0].bold = True
-        doc.add_paragraph(clean_text(paper["Abstract"]))
+        add_section_heading("Abstract")
+        add_bold_body(clean_text(paper["Abstract"]))
+
+    # ---------------- MAIN SECTIONS ----------------
 
     excluded = {"Title", "Abstract", "References", "output_file"}
+    section_keys = [k for k in paper.keys() if k not in excluded]
 
-    for idx, key in enumerate([k for k in paper if k not in excluded], start=1):
-        p = doc.add_paragraph(f"{to_roman(idx)}. {key}")
-        p.runs[0].bold = True
-        doc.add_paragraph(clean_text(paper[key]))
+    for idx, key in enumerate(section_keys, start=1):
+        roman = to_roman(idx)
+        add_section_heading(f"{roman}. {key}")
+        add_normal_body(clean_text(paper[key]))
+        doc.add_paragraph("")
+
+    # ---------------- REFERENCES ----------------
 
     if "References" in paper:
-        p = doc.add_paragraph("References")
-        p.runs[0].bold = True
+        add_section_heading("References")
 
         refs = paper["References"]
         if isinstance(refs, str):
-            refs = re.split(r"\n\s*\n", refs)
+            ref_list = re.split(r'\n\s*\n|\n\[\d+\]', refs)
+            ref_list = [r.strip() for r in ref_list if r.strip()]
+        else:
+            ref_list = refs
 
-        for r in refs:
-            doc.add_paragraph(r)
+        for ref in ref_list:
+            add_normal_body(ref)
+
+    # ---------------- SAVE ----------------
 
     output_file = paper.get("output_file", "output.docx")
     doc.save(output_file)
-
-    return output_file
+    print(f"✅ DOCX created successfully → {output_file}")
     
     
 
